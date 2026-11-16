@@ -1,0 +1,70 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  GUARD
+  ADMIN
+}
+
+enum ParcelStatus {
+  RECEIVED
+  PICKED_UP
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(GUARD)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  loggedParcels Parcel[] @relation("GuardLoggedParcels")
+
+  @@map("users")
+}
+
+model Student {
+  id           String   @id @default(uuid())
+  enrollmentNo String   @unique // e.g. "RU2024CS042"
+  name         String
+  hostel       String?
+  room         String?
+  phone        String?
+  email        String?
+  createdAt    DateTime @default(now())
+
+  parcels      Parcel[]
+
+  @@map("students")
+}
+
+model Parcel {
+  id                  String       @id @default(uuid())
+  lookupNumber        String       // e.g. "P-101", resets daily
+  carrier             String       // Amazon, Flipkart, Delhivery, Bluedart, etc.
+  trackingNumber      String?
+  status              ParcelStatus @default(RECEIVED)
+  notes               String?
+
+  // Relations
+  studentId           String
+  student             Student      @relation(fields: [studentId], references: [id])
+  studentEnrollmentNo String       // Denormalized for zero-join fast search
+
+  loggedById          String
+  loggedBy            User         @relation("GuardLoggedParcels", fields: [loggedById], references: [id])
+
+  pickedUpAt          DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@map("parcels")
+}
