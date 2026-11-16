@@ -1,0 +1,135 @@
+/* Parcel Collector – gate terminal UI
+   Warm paper background, crimson headings, icon rail, pill toggles.
+   The one loud element is the kraft "tag" a guard writes on the box. */
+
+:root {
+  color-scheme: light;
+  --paper: #FAF8F6;
+  --surface: #FFFFFF;
+  --sunken: #F3EFEB;
+  --line: #ECE5DF;
+  --line-strong: #DCD2CA;
+  --ink: #27211F;
+  --ink-2: #4B4440;
+  --muted: #857A74;
+  --crimson: #9C1F3D;
+  --on-crimson: #FFFFFF;
+  --crimson-soft: #FBECEE;
+  --crimson-line: #E8C7CF;
+  --marigold: #D95A28;
+  --marigold-soft: #FCEBE2;
+  --green: #2D7A4B;
+  --green-soft: #E6F2EA;
+  --amber: #A85A0C;
+  --amber-soft: #FCEFDC;
+  --kraft: #E6CCA2;
+  --kraft-edge: #CDAE7E;
+  --kraft-ink: #2A1F17;
+  --shadow-pop: 0 14px 36px rgba(39, 33, 31, .12), 0 2px 6px rgba(39, 33, 31, .06);
+  --font: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-tag: "Barlow Condensed", "Roboto Condensed", "Arial Narrow", Impact, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r-s: 10px;
+  --r-m: 14px;
+  --r-l: 20px;
+  --topbar: 84px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #161312;
+    --surface: #201C1A;
+    --sunken: #1B1816;
+    --line: #322C29;
+    --line-strong: #463E39;
+    --ink: #F2ECE8;
+    --ink-2: #D4CBC5;
+    --muted: #A1968F;
+    --crimson: #F0849B;
+    --on-crimson: #2A0D14;
+    --crimson-soft: #3A1A22;
+    --crimson-line: #5A2733;
+    --marigold: #F28F5E;
+    --marigold-soft: #3A2218;
+    --green: #74C795;
+    --green-soft: #1B3024;
+    --amber: #EAA75C;
+    --amber-soft: #392916;
+    --kraft: #D6BC91;
+    --kraft-edge: #B99A6C;
+    --kraft-ink: #241A12;
+    --shadow-pop: 0 14px 36px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .3);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: inherit; }
+h1, h2, h3 { text-wrap: balance; }
+:focus-visible { outline: 2px solid var(--crimson); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 13.5px; }
+
+svg.i {
+  width: 20px; height: 20px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ---------- Top bar ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  height: var(--topbar);
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 0 32px 0 28px;
+  background: var(--paper);
+}
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.brand-mark {
+  width: 42px; height: 42px; border-radius: 12px;
+  background: var(--crimson); color: var(--on-crimson);
+  display: grid; place-items: center;
+}
+.brand-mark svg.i { width: 23px; height: 23px; }
+.brand-name { display: flex; flex-direction: column; line-height: 1.15; }
+.brand-name b { font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+.brand-name span { font-size: 13px; color: var(--muted); }
+
+.top-actions { display: flex; align-items: center; gap: 16px; }
+.avatar {
+  width: 52px; height: 52px; border-radius: 50%;
+  display: grid; place-items: center; flex: none;
+  background: var(--surface); color: var(--ink-2); font-weight: 500;
+  box-shadow: 0 0 0 1px var(--line), 0 4px 12px rgba(39, 33, 31, .06);
+}
+
+/* ---------- Shell ---------- */
+.shell { display: grid; grid-template-columns: 96px minmax(0, 1fr); }
+.rail {
+  position: sticky; top: var(--topbar);
+  height: calc(100vh - var(--topbar));
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 28px 0;
+}
+.rail a, .rail button {
+  width: 52px; height: 52px; border-radius: 16px;
+  display: grid; place-items: center;
+  color: var(--muted); background: none; border: 0; cursor: pointer; text-decoration: none;
+}
+.rail a:hover, .rail button:hover { color: var(--ink-2); background: var(--sunken); }
+.rail a[aria-current="page"] { background: var(--marigold-soft); color: var(--marigold); }
+.rail svg.i { width: 23px; height: 23px; }
+.rail .push { margin-top: auto; }
+.main { padding: 24px 40px 80px 16px; min-width: 0; max-width: 1440px; }
+
