@@ -18,6 +18,10 @@ const studentModel = {
       take: limit,
     });
   },
+
+  listFirst(limit) {
+    return prisma.student.findMany({ orderBy: { enrollmentNo: 'asc' }, take: limit });
+  },
 };
 
 export default studentModel;
