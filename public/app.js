@@ -13,6 +13,7 @@
   const API_ROOT =
     (params.get('api') || (location.protocol === 'file:' ? 'http://localhost:3000' : '')).replace(/\/$/, '') + '/api/v1';
   const CARRIERS = ['Amazon', 'Flipkart', 'Delhivery', 'Bluedart', 'Myntra'];
+  const PAGE_SIZE = 10;
 
   /* ---------- small helpers ---------- */
   const store = {
@@ -76,6 +77,8 @@
     inventory: [], inventoryLoaded: false,
     stats: null,
     desk: freshDesk(),
+    shelf: { carrier: '', q: '', page: 1, searchOpen: false },
+    students: { q: '', results: null, loading: false, error: '' },
     pickers: { log: newPicker(), pickup: newPicker() },
     lastRoute: null,
   };
@@ -157,7 +160,7 @@
   }
 
   /* ---------- routing ---------- */
-  const ROUTES = { desk: 'Gate desk' };
+  const ROUTES = { desk: 'Gate desk', shelf: 'Shelf', students: 'Students' };
   function currentRoute() {
     const r = location.hash.slice(1) || 'desk';
     if (!ROUTES[r]) return 'desk';
@@ -191,7 +194,7 @@
     }
   }
 
-  const pageView = (r) => ({ desk: deskView }[r])();
+  const pageView = (r) => ({ desk: deskView, shelf: shelfView, students: studentsView }[r])();
 
   const brandView = () => `
     <a class="brand" href="#desk">
@@ -202,11 +205,15 @@
   function shellView(r, body) {
     const u = state.user;
     const admin = u.role === 'ADMIN';
-    const nav = [['desk', 'package', 'Gate desk']];
+    const n = state.inventory.length;
+    const nav = [['desk', 'package', 'Gate desk'], ['shelf', 'layers', 'Shelf'], ['students', 'users', 'Students']];
     return `
       <header class="topbar">
         ${brandView()}
         <div class="top-actions">
+          <a class="icon-btn bare" href="#shelf" aria-label="${plural(n, 'parcel')} on the shelf" title="On the shelf">
+            ${icon('bell')}${n ? `<span class="badge">${n > 9 ? '9+' : n}</span>` : ''}
+          </a>
           <div class="avatar" title="${esc(u.name)}, ${admin ? 'Admin' : 'Guard'}">${esc(initials(u.name))}</div>
         </div>
       </header>
@@ -397,6 +404,107 @@
       </div>`;
   }
 
+  /* ----- Shelf ----- */
+  function shelfView() {
+    const s = state.shelf;
+    const inv = state.inventory;
+    const carriers = [...new Set([...CARRIERS, ...inv.map((p) => p.carrier)])];
+    const q = s.q.trim().toLowerCase();
+    const rows = inv
+      .filter((p) => !s.carrier || p.carrier === s.carrier)
+      .filter((p) => !q || [p.lookupNumber, p.student?.name, p.studentEnrollmentNo, p.trackingNumber].some((v) => String(v || '').toLowerCase().includes(q)))
+      .sort(byCreated);
+    const total = rows.length;
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (s.page > pages) s.page = pages;
+    const start = (s.page - 1) * PAGE_SIZE;
+    const pageRows = rows.slice(start, start + PAGE_SIZE);
+
+    const emptyMsg = !state.inventoryLoaded ? 'Loading the shelf…'
+      : inv.length ? 'No parcels match. Clear the search or pick another carrier.'
+      : 'The shelf is empty. Parcels logged at the gate show up here.';
+
+    return `
+      <div class="page-head">
+        <div><h1>Shelf</h1><p>Parcels waiting for pickup, oldest first</p></div>
+        <select class="select pill" id="shelf-carrier" data-bind="shelf.carrier" aria-label="Carrier">
+          <option value="">All carriers</option>
+          ${carriers.map((c) => `<option value="${esc(c)}" ${c === s.carrier ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="table-tools">
+        <h2 class="section-title">Waiting</h2>
+        <div class="tools">
+          ${s.searchOpen || s.q ? `<div class="input-icon">${icon('search')}<input class="input" id="shelf-q" data-bind="shelf.q" data-rerender placeholder="Tag, name or enrollment" aria-label="Search the shelf" value="${esc(s.q)}"></div>` : ''}
+          <button class="icon-btn" type="button" data-action="toggle-shelf-search" aria-label="${s.searchOpen || s.q ? 'Close search' : 'Search the shelf'}">${icon(s.searchOpen || s.q ? 'x' : 'search')}</button>
+          <button class="icon-btn" type="button" data-action="refresh-shelf" aria-label="Refresh">${icon('refresh')}</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tag</th><th>Student</th><th>Room</th><th>Carrier</th><th>Waiting</th><th><span class="sr-only">Action</span></th></tr></thead>
+          <tbody>
+            ${pageRows.length ? pageRows.map((p) => `
+              <tr>
+                <td>${tagView(p)}</td>
+                <td>${esc(p.student?.name)}<span class="sub">${esc(p.studentEnrollmentNo)}</span></td>
+                <td>${esc(p.student?.room || '–')}<span class="sub">${esc(p.student?.hostel || '')}</span></td>
+                <td>${esc(p.carrier)}${p.trackingNumber ? `<span class="sub">${esc(p.trackingNumber)}</span>` : ''}</td>
+                <td class="${daysAgo(p.createdAt) >= 3 ? 'age-old' : ''}">${waitingLabel(p.createdAt)}</td>
+                <td><button class="btn btn-sm" type="button" data-action="lookup" data-enr="${esc(p.studentEnrollmentNo)}">Hand over</button></td>
+              </tr>`).join('') : `<tr><td colspan="6" class="table-empty">${emptyMsg}</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <span>Showing <b>${total ? start + 1 : 0} – ${start + pageRows.length}</b> of <b>${total}</b> entries</span>
+        <div class="btns">
+          <button type="button" data-action="page" data-page="1" aria-label="First page" ${s.page === 1 ? 'disabled' : ''}>${icon('chevrons-left')}</button>
+          <button type="button" data-action="page" data-page="${s.page - 1}" aria-label="Previous page" ${s.page === 1 ? 'disabled' : ''}>${icon('chevron-left')}</button>
+          <button type="button" data-action="page" data-page="${s.page + 1}" aria-label="Next page" ${s.page === pages ? 'disabled' : ''}>${icon('chevron-right')}</button>
+          <button type="button" data-action="page" data-page="${pages}" aria-label="Last page" ${s.page === pages ? 'disabled' : ''}>${icon('chevrons-right')}</button>
+        </div>
+      </div>`;
+  }
+
+  /* ----- Students ----- */
+  function studentsView() {
+    const st = state.students;
+    let body;
+    if (st.q.trim().length < 2) body = '<p class="empty-note">Type at least 2 characters of a name or enrollment number.</p>';
+    else if (st.error) body = `<div class="form-error" role="alert">${esc(st.error)}</div>`;
+    else if (!st.results) body = '<p class="empty-note">Searching…</p>';
+    else {
+      const waiting = (enr) => state.inventory.filter((p) => p.studentEnrollmentNo === enr).length;
+      body = `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Enrollment no.</th><th>Name</th><th>Hostel</th><th>Room</th><th>Contact</th><th>On the shelf</th></tr></thead>
+            <tbody>
+              ${st.results.length ? st.results.map((s) => {
+                const n = waiting(s.enrollmentNo);
+                return `<tr>
+                  <td>${esc(s.enrollmentNo)}</td>
+                  <td>${esc(s.name)}</td>
+                  <td>${esc(s.hostel || '–')}</td>
+                  <td>${esc(s.room || '–')}</td>
+                  <td>${esc(s.phone || s.email || '–')}</td>
+                  <td>${n ? `<button class="btn btn-sm" type="button" data-action="lookup" data-enr="${esc(s.enrollmentNo)}">${plural(n, 'parcel')}</button>` : '<span class="muted">None</span>'}</td>
+                </tr>`;
+              }).join('') : `<tr><td colspan="6" class="table-empty">No student matches “${esc(st.q.trim())}”.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        ${st.results.length === 10 ? '<p class="empty-note">Showing the first 10 matches. Type more to narrow it down.</p>' : ''}`;
+    }
+    return `
+      <div class="page-head"><div><h1>Students</h1><p>Look someone up to see what’s waiting for them</p></div></div>
+      <div class="field panel">
+        <div class="input-icon">${icon('search')}<input class="input input-lg" id="students-q" placeholder="Name or enrollment number" aria-label="Search students" autocomplete="off" value="${esc(st.q)}"></div>
+      </div>
+      ${body}`;
+  }
+
   /* ---------- student picker ---------- */
   const pickerTimers = {};
   function onPickerInput(key, el) {
@@ -581,17 +689,51 @@
       case 'lookup': lookupParcels(el.dataset.enr); break;
       case 'handover': el.disabled = true; handoverOne(el.dataset.id); break;
       case 'handover-all': el.disabled = true; handoverAll(); break;
+      case 'page': state.shelf.page = Math.max(1, parseInt(el.dataset.page, 10) || 1); render(); break;
+      case 'toggle-shelf-search': {
+        const s = state.shelf;
+        const open = s.searchOpen || s.q;
+        s.searchOpen = !open; if (open) s.q = '';
+        s.page = 1; render();
+        if (!open) document.getElementById('shelf-q')?.focus();
+        break;
+      }
+      case 'refresh-shelf': loadInventory(); break;
       default: break;
     }
   });
 
+  let studentTimer;
   document.addEventListener('input', (e) => {
     const t = e.target;
     if (t.dataset.pickerInput) { onPickerInput(t.dataset.pickerInput, t); return; }
+    if (t.id === 'students-q') {
+      const st = state.students;
+      st.q = t.value; st.results = null; st.error = '';
+      clearTimeout(studentTimer);
+      const q = st.q.trim();
+      render();
+      if (q.length < 2) return;
+      studentTimer = setTimeout(async () => {
+        try { const { data } = await api('GET', `/students/search?q=${encodeURIComponent(q)}`); if (st.q.trim() === q) st.results = data; }
+        catch (err) { st.error = err.message; }
+        render();
+      }, 200);
+      return;
+    }
     if (t.dataset.bind && t.tagName !== 'SELECT') {
       setPath(t.dataset.bind, t.value);
+      if (t.dataset.bind.startsWith('shelf.')) state.shelf.page = 1;
       if ('rerender' in t.dataset) render();
     }
+  });
+
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.tagName !== 'SELECT' || !t.dataset.bind) return;
+    setPath(t.dataset.bind, t.value);
+    if (t.dataset.bind.startsWith('shelf.')) state.shelf.page = 1;
+    render();
   });
 
   document.addEventListener('keydown', (e) => {
