@@ -12,6 +12,7 @@
   const params = new URLSearchParams(location.search);
   const API_ROOT =
     (params.get('api') || (location.protocol === 'file:' ? 'http://localhost:3000' : '')).replace(/\/$/, '') + '/api/v1';
+  const CARRIERS = ['Amazon', 'Flipkart', 'Delhivery', 'Bluedart', 'Myntra'];
 
   /* ---------- small helpers ---------- */
   const store = {
@@ -62,12 +63,23 @@
   const icon = (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
   /* ---------- state ---------- */
+  const freshDesk = () => ({
+    tab: 'log', logStudent: null, carrier: 'Amazon', otherCarrier: '', tracking: '', notes: '',
+    lastParcel: null, busy: false, error: '',
+    pickupResult: null, pickupLoading: false, pickupError: '',
+  });
+
   const state = {
     token: store.get('token'),
     user: store.get('user'),
     loginError: '', loginEmail: '', loginBusy: false,
+    inventory: [], inventoryLoaded: false,
+    stats: null,
+    desk: freshDesk(),
+    pickers: { log: newPicker(), pickup: newPicker() },
     lastRoute: null,
   };
+  function newPicker() { return { q: '', results: [], active: -1, seq: 0, searched: null, error: null }; }
 
   /* ---------- API client ---------- */
   async function api(method, path, body) {
@@ -113,7 +125,8 @@
     const { data } = await api('POST', '/auth/login', { email, password });
     state.token = data.token; state.user = data.user;
     store.set('token', data.token); store.set('user', data.user);
-    state.lastRoute = null;
+    state.desk = freshDesk(); state.stats = null;
+    state.inventory = []; state.inventoryLoaded = false; state.lastRoute = null;
     state.loginError = ''; state.loginEmail = '';
     if (location.hash !== '#desk') location.hash = '#desk';
     render();
@@ -123,6 +136,24 @@
     store.set('token', null); store.set('user', null);
     state.lastRoute = null;
     render();
+  }
+
+  /* ---------- data loading ---------- */
+  async function loadInventory() {
+    try {
+      const { data } = await api('GET', '/parcels/inventory');
+      state.inventory = data.parcels; state.inventoryLoaded = true;
+    } catch (e) { if (e.status !== 401) toast(e.message, 'err'); }
+    render();
+  }
+  async function loadStats() {
+    if (state.user?.role !== 'ADMIN') return;
+    try { const { data } = await api('GET', '/admin/stats'); state.stats = data; } catch { /* shown elsewhere */ }
+    render();
+  }
+  function enter(r) {
+    loadInventory();
+    if (r === 'desk') loadStats();
   }
 
   /* ---------- routing ---------- */
@@ -148,6 +179,7 @@
       const r = currentRoute();
       document.title = `${ROUTES[r]} – Parcel Collector`;
       app.innerHTML = shellView(r, pageView(r));
+      if (r !== state.lastRoute) { state.lastRoute = r; queueMicrotask(() => enter(r)); }
     }
 
     if (focusId) {
@@ -159,7 +191,7 @@
     }
   }
 
-  const pageView = (r) => `<div class="page-head"><div><h1>${ROUTES[r]}</h1><p>${fmt.long(new Date())}</p></div></div>`;
+  const pageView = (r) => ({ desk: deskView }[r])();
 
   const brandView = () => `
     <a class="brand" href="#desk">
@@ -222,7 +254,300 @@
     <div class="stamp" role="img" aria-label="Tag ${esc(code)}, ${fmt.short(date)}">
       <span class="code">${esc(code)}</span><span class="date">${fmt.short(date)}</span>
     </div>`;
+  const tagView = (p, cls = '') => `<span class="tag ${cls}"><b>${esc(p.lookupNumber)}</b><small>${fmt.short(p.createdAt)}</small></span>`;
+  const place = (s) => [s?.hostel, s?.room].filter(Boolean).join(', ');
+  const studentCard = (s, action = '') => `
+    <div class="student">
+      <span class="av">${esc(initials(s.name))}</span>
+      <span class="who"><b>${esc(s.name)}</b><span>${esc(s.enrollmentNo)}${place(s) ? `, ${esc(place(s))}` : ''}</span></span>
+      ${action}
+    </div>`;
+
+  function pickerView(key, placeholder, { big = false, labelledBy = '' } = {}) {
+    const p = state.pickers[key];
+    return `
+      <div class="picker">
+        <div class="input-icon">${icon('search')}
+          <input class="input ${big ? 'input-lg' : ''}" id="picker-${key}" data-picker-input="${key}" type="text"
+            autocomplete="off" spellcheck="false" placeholder="${esc(placeholder)}" value="${esc(p.q)}"
+            role="combobox" aria-expanded="false" aria-controls="picker-${key}-list" aria-autocomplete="list"
+            ${labelledBy ? `aria-labelledby="${labelledBy}"` : 'aria-label="Student name or enrollment number"'}>
+        </div>
+        <ul class="options" id="picker-${key}-list" role="listbox" hidden></ul>
+      </div>`;
+  }
+
+  /* ----- Gate desk ----- */
+  function deskView() {
+    const d = state.desk;
+    return `
+      <div class="page-head"><div><h1>Gate desk</h1><p>${fmt.long(new Date())}</p></div></div>
+      <div class="desk">
+        <section>
+          <div class="tabs" role="tablist">
+            <button role="tab" type="button" aria-selected="${d.tab === 'log'}" data-action="desk-tab" data-tab="log">Log a parcel</button>
+            <button role="tab" type="button" aria-selected="${d.tab === 'handover'}" data-action="desk-tab" data-tab="handover">Hand over</button>
+          </div>
+          ${d.tab === 'log' ? logView() : handoverView()}
+        </section>
+        <aside class="desk-aside">${todayView()}</aside>
+      </div>`;
+  }
+
+  function logView() {
+    const d = state.desk;
+    if (d.lastParcel) {
+      const p = d.lastParcel;
+      return `
+        <div class="panel">
+          ${stampView(p.lookupNumber, p.createdAt)}
+          <p class="stamp-note">Write ${esc(p.lookupNumber)} and ${fmt.short(p.createdAt)} on the box</p>
+          <p class="stamp-meta">For ${esc(p.student?.name)}${place(p.student) ? `, ${esc(place(p.student))}` : ''}.
+            ${esc(p.carrier)} parcel logged at ${fmt.time(p.createdAt)}${p.trackingNumber ? `, tracking ${esc(p.trackingNumber)}` : ''}.</p>
+          <div class="row">
+            <button class="btn btn-primary" type="button" data-action="log-another">Log another parcel</button>
+            <button class="btn" type="button" data-action="log-same">Another for ${esc(firstName(p.student?.name))}</button>
+          </div>
+        </div>`;
+    }
+    return `
+      <form class="panel" data-form="log" novalidate>
+        ${d.error ? `<div class="form-error" role="alert">${esc(d.error)}</div>` : ''}
+        <div class="field">
+          <span class="label" id="lbl-log">Student</span>
+          ${d.logStudent
+            ? studentCard(d.logStudent, '<button class="btn btn-sm btn-quiet" type="button" data-action="clear-log-student">Change</button>')
+            : pickerView('log', 'Name or enrollment number', { labelledBy: 'lbl-log' })}
+        </div>
+        <div class="field">
+          <span class="label" id="lbl-carrier">Carrier</span>
+          <div class="choices" role="group" aria-labelledby="lbl-carrier">
+            ${[...CARRIERS, 'Other'].map((c) => `<button type="button" class="choice" aria-pressed="${d.carrier === c}" data-action="carrier" data-carrier="${c}">${c}</button>`).join('')}
+          </div>
+          ${d.carrier === 'Other' ? `<input class="input" id="other-carrier" data-bind="desk.otherCarrier" placeholder="Carrier name" aria-label="Carrier name" value="${esc(d.otherCarrier)}">` : ''}
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="tracking">Tracking number <span class="opt">(optional)</span></label>
+            <input class="input" id="tracking" data-bind="desk.tracking" autocomplete="off" value="${esc(d.tracking)}">
+          </div>
+          <div class="field">
+            <label for="notes">Note <span class="opt">(optional)</span></label>
+            <input class="input" id="notes" data-bind="desk.notes" placeholder="Fragile, large box…" value="${esc(d.notes)}">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-lg" type="submit" ${d.busy ? 'disabled' : ''}>${d.busy ? 'Logging…' : 'Log parcel'}</button>
+      </form>`;
+  }
+
+  function handoverView() {
+    const d = state.desk;
+    const r = d.pickupResult;
+    let out = `
+      <div class="field panel">
+        ${pickerView('pickup', 'Name or enrollment number', { big: true })}
+        <span class="hint">Check their ID card, pick the student, then find these tags on the shelf.</span>
+      </div>`;
+    if (d.pickupLoading) out += '<p class="empty-note">Looking up parcels…</p>';
+    else if (d.pickupError) out += `<div class="form-error panel" role="alert">${esc(d.pickupError)}</div>`;
+    else if (r) {
+      const waiting = r.parcels.filter((p) => p.status === 'RECEIVED');
+      out += `
+        <div class="panel">
+          ${studentCard(r.student, '<button class="btn btn-sm btn-quiet" type="button" data-action="clear-pickup">Clear</button>')}
+          <div class="pending-head">
+            <h2 class="section-title">${waiting.length ? `${waiting.length} waiting` : 'Nothing waiting'}</h2>
+            ${waiting.length > 1 ? `<button class="btn btn-primary btn-sm" type="button" data-action="handover-all">Hand over all ${waiting.length}</button>` : ''}
+          </div>
+          ${r.parcels.length
+            ? `<div class="pending">${r.parcels.map(pendingItem).join('')}</div>`
+            : `<p class="empty-note">${esc(firstName(r.student.name))} has no parcels on the shelf.</p>`}
+        </div>`;
+    }
+    return out;
+  }
+
+  function pendingItem(p) {
+    const done = p.status === 'PICKED_UP';
+    const detail = done
+      ? `Handed over at ${fmt.time(p.pickedUpAt)}`
+      : `Logged ${fmt.dateTime(p.createdAt)}${p.notes ? `. ${esc(p.notes)}` : ''}`;
+    return `
+      <div class="pending-item ${done ? 'done' : ''}">
+        ${tagView(p, 'tag-lg')}
+        <div class="meta"><b>${esc(p.carrier)}</b><span>${p.trackingNumber ? `${esc(p.trackingNumber)}. ` : ''}${detail}</span></div>
+        ${done
+          ? `<span class="status">${icon('check')}Handed over</span>`
+          : `<button class="btn btn-sm" type="button" data-action="handover" data-id="${esc(p.id)}">Hand over</button>`}
+      </div>`;
+  }
+
+  function todayView() {
+    const s = state.stats;
+    const inv = state.inventory;
+    const loaded = state.inventoryLoaded;
+    const today = dayKey(new Date());
+    const items = s
+      ? [[s.receivedToday, 'Logged today'], [s.pickedUpToday, 'Handed over'], [s.activeInventory, 'On the shelf']]
+      : [[loaded ? inv.filter((p) => dayKey(p.createdAt) === today).length : '–', 'New today'], [loaded ? inv.length : '–', 'On the shelf']];
+    return `
+      <div class="aside-block">
+        <h2>Today</h2>
+        <div class="today">${items.map(([n, l]) => `<div><b>${n}</b><span>${l}</span></div>`).join('')}</div>
+      </div>`;
+  }
+
+  /* ---------- student picker ---------- */
+  const pickerTimers = {};
+  function onPickerInput(key, el) {
+    const p = state.pickers[key];
+    p.q = el.value; p.active = -1;
+    clearTimeout(pickerTimers[key]);
+    const q = p.q.trim();
+    if (q.length < 2) { p.results = []; drawOptions(key); return; }
+    drawOptions(key);
+    pickerTimers[key] = setTimeout(async () => {
+      const seq = ++p.seq;
+      try {
+        const { data } = await api('GET', `/students/search?q=${encodeURIComponent(q)}`);
+        if (seq !== p.seq) return;
+        p.results = data; p.searched = q;
+      } catch (e) {
+        if (seq !== p.seq) return;
+        p.results = []; p.error = e.message; p.searched = q;
+      }
+      drawOptions(key);
+    }, 180);
+  }
+
+  function drawOptions(key) {
+    const p = state.pickers[key];
+    const list = document.getElementById(`picker-${key}-list`);
+    const input = document.getElementById(`picker-${key}`);
+    if (!list || !input) return;
+    const q = p.q.trim();
+    if (q.length < 2 || document.activeElement !== input) {
+      list.hidden = true; input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant');
+      return;
+    }
+    if (p.error) list.innerHTML = `<li class="empty">${esc(p.error)}</li>`;
+    else if (p.searched !== q) list.innerHTML = '<li class="empty">Searching…</li>';
+    else if (!p.results.length) list.innerHTML = `<li class="empty">No student matches “${esc(q)}”.</li>`;
+    else {
+      list.innerHTML = p.results.map((s, i) => `
+        <li class="option" role="option" id="picker-${key}-opt-${i}" aria-selected="${i === p.active}" data-pick="${key}" data-index="${i}">
+          <span><b>${esc(s.name)}</b><br><small>${esc(place(s))}</small></span><small>${esc(s.enrollmentNo)}</small>
+        </li>`).join('');
+    }
+    list.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    if (p.active >= 0) input.setAttribute('aria-activedescendant', `picker-${key}-opt-${p.active}`);
+    else input.removeAttribute('aria-activedescendant');
+  }
+
+  function onPickerKey(key, e) {
+    const p = state.pickers[key];
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!p.results.length) return;
+      e.preventDefault();
+      const n = p.results.length;
+      p.active = e.key === 'ArrowDown' ? (p.active + 1) % n : (p.active - 1 + n) % n;
+      drawOptions(key);
+      document.getElementById(`picker-${key}-opt-${p.active}`)?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const q = p.q.trim().toUpperCase();
+      if (p.active >= 0) return pick(key, p.active);
+      const exact = p.results.findIndex((s) => s.enrollmentNo === q);
+      if (exact >= 0) return pick(key, exact);
+      if (p.results.length === 1) return pick(key, 0);
+      if (key === 'pickup' && /^[A-Z0-9]{5,}$/.test(q)) return lookupParcels(q);
+    } else if (e.key === 'Escape') {
+      p.q = ''; p.results = []; e.target.value = ''; drawOptions(key);
+    }
+  }
+
+  function pick(key, i) {
+    const p = state.pickers[key];
+    const s = p.results[i];
+    if (!s) return;
+    state.pickers[key] = newPicker();
+    if (key === 'log') {
+      state.desk.logStudent = s; state.desk.error = '';
+      render();
+      document.querySelector('[data-action="carrier"][aria-pressed="true"]')?.focus();
+    } else {
+      lookupParcels(s.enrollmentNo);
+    }
+  }
+
   /* ---------- actions ---------- */
+  async function lookupParcels(enr) {
+    const d = state.desk;
+    d.tab = 'handover'; d.pickupLoading = true; d.pickupError = ''; d.pickupResult = null;
+    state.pickers.pickup = newPicker();
+    if (location.hash !== '#desk' && location.hash !== '') location.hash = '#desk';
+    render();
+    try {
+      const { data } = await api('GET', `/parcels/search?enrollmentNo=${encodeURIComponent(enr)}`);
+      d.pickupResult = data;
+    } catch (e) { d.pickupError = e.message; }
+    d.pickupLoading = false;
+    render();
+  }
+
+  async function handover(id) {
+    const { data } = await api('PATCH', `/parcels/${encodeURIComponent(id)}/pickup`);
+    const list = state.desk.pickupResult?.parcels;
+    if (list) { const i = list.findIndex((p) => p.id === id); if (i >= 0) list[i] = data; }
+    state.inventory = state.inventory.filter((p) => p.id !== id);
+    return data;
+  }
+
+  async function handoverOne(id) {
+    try {
+      const p = await handover(id);
+      toast(`${p.lookupNumber} handed over to ${firstName(p.student?.name)}`);
+    } catch (e) {
+      toast(e.message, 'err');
+      if (e.status === 409) loadInventory();
+    }
+    render(); loadStats();
+  }
+
+  async function handoverAll() {
+    const r = state.desk.pickupResult;
+    if (!r) return;
+    const ids = r.parcels.filter((p) => p.status === 'RECEIVED').map((p) => p.id);
+    let done = 0;
+    for (const id of ids) {
+      try { await handover(id); done++; } catch (e) { toast(e.message, 'err'); }
+      render();
+    }
+    if (done) toast(`${plural(done, 'parcel')} handed over to ${firstName(r.student.name)}`);
+    loadStats();
+  }
+
+  async function submitLog() {
+    const d = state.desk;
+    const carrier = d.carrier === 'Other' ? d.otherCarrier.trim() : d.carrier;
+    if (!d.logStudent) { d.error = 'Pick the student this parcel is for.'; render(); document.getElementById('picker-log')?.focus(); return; }
+    if (!carrier) { d.error = 'Enter the carrier’s name.'; render(); document.getElementById('other-carrier')?.focus(); return; }
+    d.busy = true; d.error = ''; render();
+    try {
+      const { data } = await api('POST', '/parcels', {
+        studentEnrollmentNo: d.logStudent.enrollmentNo,
+        carrier,
+        trackingNumber: d.tracking.trim() || undefined,
+        notes: d.notes.trim() || undefined,
+      });
+      d.lastParcel = data; d.tracking = ''; d.notes = '';
+      state.inventory = [...state.inventory, data];
+    } catch (e) { d.error = e.message; }
+    d.busy = false;
+    render(); loadStats();
+  }
+
   async function submitLogin(form) {
     const fd = new FormData(form);
     state.loginEmail = String(fd.get('email') || '');
@@ -232,21 +557,66 @@
     state.loginBusy = false; render();
   }
 
+  function setPath(path, value) {
+    const [group, key] = path.split('.');
+    state[group][key] = value;
+  }
+
   /* ---------- events ---------- */
   document.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-action]');
     if (!el) return;
+    const d = state.desk;
     switch (el.dataset.action) {
       case 'sign-out': signOut(); break;
+      case 'desk-tab': d.tab = el.dataset.tab; render(); break;
+      case 'carrier':
+        d.carrier = el.dataset.carrier; render();
+        if (d.carrier === 'Other') document.getElementById('other-carrier')?.focus();
+        break;
+      case 'clear-log-student': d.logStudent = null; render(); document.getElementById('picker-log')?.focus(); break;
+      case 'log-another': d.lastParcel = null; d.logStudent = null; render(); document.getElementById('picker-log')?.focus(); break;
+      case 'log-same': d.lastParcel = null; render(); document.getElementById('tracking')?.focus(); break;
+      case 'clear-pickup': d.pickupResult = null; d.pickupError = ''; render(); document.getElementById('picker-pickup')?.focus(); break;
+      case 'lookup': lookupParcels(el.dataset.enr); break;
+      case 'handover': el.disabled = true; handoverOne(el.dataset.id); break;
+      case 'handover-all': el.disabled = true; handoverAll(); break;
       default: break;
     }
   });
 
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.dataset.pickerInput) { onPickerInput(t.dataset.pickerInput, t); return; }
+    if (t.dataset.bind && t.tagName !== 'SELECT') {
+      setPath(t.dataset.bind, t.value);
+      if ('rerender' in t.dataset) render();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    const k = e.target.dataset?.pickerInput;
+    if (k) onPickerKey(k, e);
+  });
+  document.addEventListener('focusin', (e) => {
+    const k = e.target.dataset?.pickerInput;
+    if (k) drawOptions(k);
+  });
+  document.addEventListener('focusout', (e) => {
+    const k = e.target.dataset?.pickerInput;
+    if (k) setTimeout(() => drawOptions(k), 120);
+  });
+  document.addEventListener('mousedown', (e) => {
+    const o = e.target.closest('[data-pick]');
+    if (!o) return;
+    e.preventDefault();
+    pick(o.dataset.pick, Number(o.dataset.index));
+  });
   document.addEventListener('submit', (e) => {
     const f = e.target.closest('form[data-form]');
     if (!f) return;
     e.preventDefault();
-    ({ login: submitLogin })[f.dataset.form]?.(f);
+    ({ login: submitLogin, log: submitLog })[f.dataset.form]?.(f);
   });
 
   window.addEventListener('hashchange', render);

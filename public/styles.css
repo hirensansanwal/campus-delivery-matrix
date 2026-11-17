@@ -133,6 +133,32 @@ svg.i {
 .rail .push { margin-top: auto; }
 .main { padding: 24px 40px 80px 16px; min-width: 0; max-width: 1440px; }
 
+/* ---------- Page heading ---------- */
+.page-head {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+  margin: 12px 0 36px;
+}
+.page-head h1 {
+  margin: 0; font-size: 30px; line-height: 1.2; font-weight: 600;
+  color: var(--crimson); letter-spacing: -.015em;
+}
+.page-head p { margin: 6px 0 0; color: var(--muted); font-size: 17px; }
+.section-title { margin: 0; font-size: 22px; font-weight: 600; color: var(--crimson); letter-spacing: -.01em; }
+
+/* ---------- Tabs ---------- */
+.tabs { display: flex; gap: 36px; margin-bottom: 30px; overflow-x: auto; scrollbar-width: none; }
+.tabs button {
+  position: relative; flex: none;
+  background: none; border: 0; padding: 4px 0 12px;
+  font-size: 18px; color: var(--muted); cursor: pointer; white-space: nowrap;
+}
+.tabs button:hover { color: var(--ink-2); }
+.tabs button[aria-selected="true"] { color: var(--ink); }
+.tabs button[aria-selected="true"]::after {
+  content: ""; position: absolute; left: 0; bottom: 0;
+  width: 28px; height: 2px; border-radius: 2px; background: var(--ink);
+}
+
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -184,6 +210,59 @@ svg.i {
   background: var(--crimson-soft); color: var(--crimson); font-size: 14px; font-weight: 500;
 }
 
+.choices { display: flex; flex-wrap: wrap; gap: 10px; }
+.choice {
+  height: 40px; padding: 0 16px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); font-weight: 500;
+}
+.choice:hover { background: var(--sunken); }
+.choice[aria-pressed="true"] { border-color: var(--crimson); background: var(--crimson-soft); color: var(--crimson); }
+.choices + .input { margin-top: 12px; }
+
+/* Student picker */
+.picker { position: relative; }
+.options {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+  margin: 0; padding: 6px; list-style: none;
+  max-height: 340px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-m); box-shadow: var(--shadow-pop);
+}
+.option {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 10px; cursor: pointer;
+}
+.option:hover, .option[aria-selected="true"] { background: var(--sunken); }
+.option b { font-weight: 500; }
+.option small { color: var(--muted); font-size: 13px; }
+.options .empty { padding: 12px; color: var(--muted); font-size: 14px; }
+
+/* Student card (also used as a button on the sign-in screen) */
+.student {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-m);
+  background: var(--surface); text-align: left;
+}
+button.student { cursor: pointer; }
+button.student:hover { background: var(--sunken); }
+.student .av {
+  width: 44px; height: 44px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--sunken); color: var(--ink-2); font-weight: 600;
+}
+.student .who { flex: 1; min-width: 0; }
+.student .who b { display: block; font-weight: 600; }
+.student .who span { color: var(--muted); font-size: 14px; }
+
+/* ---------- Gate desk ---------- */
+.desk { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr); gap: 56px; align-items: start; }
+.desk-aside {
+  position: sticky; top: calc(var(--topbar) + 24px);
+  display: flex; flex-direction: column; gap: 40px;
+  padding-left: 40px; border-left: 1px solid var(--line);
+}
+.panel { max-width: 640px; }
+
 /* The tag: the one bold element. A kraft label, slightly askew, like marker on a box. */
 .stamp {
   display: inline-flex; align-items: flex-end; gap: 18px;
@@ -206,6 +285,43 @@ svg.i {
 .stamp-note { margin: 30px 0 6px; font-size: 21px; font-weight: 600; }
 .stamp-meta { margin: 0 0 26px; color: var(--muted); max-width: 60ch; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+
+.tag {
+  display: inline-flex; align-items: baseline; gap: 6px; flex: none;
+  padding: 3px 10px 2px; border-radius: 7px; white-space: nowrap;
+  background: var(--kraft); color: var(--kraft-ink); box-shadow: inset 0 0 0 1px var(--kraft-edge);
+}
+.tag b { font-family: var(--font-tag); font-weight: 700; font-size: 21px; line-height: 1.05; }
+.tag small { font-family: var(--font-tag); font-weight: 600; font-size: 14px; opacity: .7; }
+.tag-lg { padding: 6px 14px 4px; border-radius: 9px; }
+.tag-lg b { font-size: 38px; }
+.tag-lg small { font-size: 17px; }
+
+.pending-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 30px; }
+.pending { display: grid; gap: 12px; margin-top: 18px; }
+.pending-item {
+  display: flex; align-items: center; gap: 18px;
+  padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface);
+}
+.pending-item .meta { flex: 1; min-width: 0; }
+.pending-item .meta b { display: block; font-weight: 500; }
+.pending-item .meta span { color: var(--muted); font-size: 14px; }
+.pending-item.done { background: var(--green-soft); border-color: transparent; }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--green); font-weight: 600; font-size: 14px; white-space: nowrap; }
+.status svg.i { width: 18px; height: 18px; }
+
+.aside-block h2 {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  margin: 0 0 18px; font-size: 21px; font-weight: 500;
+}
+.aside-block h2 a { font-size: 14px; font-weight: 500; color: var(--muted); text-decoration: none; }
+.aside-block h2 a:hover { color: var(--ink); }
+.today { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 12px; }
+.today div { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.today b { display: block; font-size: 28px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.today span { font-size: 13px; color: var(--muted); }
+
+.empty-note { color: var(--muted); font-size: 14.5px; margin: 16px 0; }
 
 /* ---------- Sign in ---------- */
 .login { min-height: 100vh; display: flex; flex-direction: column; }
