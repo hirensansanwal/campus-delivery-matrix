@@ -6,3 +6,5 @@ export const presentUser = (user) => ({
   role: user.role,
   createdAt: user.createdAt,
 });
+
+export const presentUserList = (users) => users.map(presentUser);

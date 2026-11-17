@@ -1,5 +1,5 @@
 import prisma from '../config/prisma.js';
-import { generateNextTag } from '../utils/tagGenerator.js';
+import { generateNextTag, startOfToday } from '../utils/tagGenerator.js';
 
 const withStudent = { student: { select: { name: true, hostel: true, room: true } } };
 
@@ -47,6 +47,16 @@ const parcelModel = {
       data: { status: 'PICKED_UP', pickedUpAt: new Date() },
       include: withStudent,
     });
+  },
+
+  async getTodayStats() {
+    const since = startOfToday();
+    const [receivedToday, pickedUpToday, activeInventory] = await Promise.all([
+      prisma.parcel.count({ where: { createdAt: { gte: since } } }),
+      prisma.parcel.count({ where: { status: 'PICKED_UP', pickedUpAt: { gte: since } } }),
+      prisma.parcel.count({ where: { status: 'RECEIVED' } }),
+    ]);
+    return { receivedToday, pickedUpToday, activeInventory };
   },
 };
 
