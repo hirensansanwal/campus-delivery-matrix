@@ -1,7 +1,7 @@
 {
   "name": "campus-delivery-matrix",
   "version": "1.0.0",
-  "description": "Parcel Collector - gate-terminal REST API for campus parcel intake and pickup (Express + Prisma)",
+  "description": "Parcel Collector - gate-terminal REST API for campus parcel intake and pickup (MVC, Express + Prisma + MongoDB)",
   "main": "src/server.js",
   "type": "module",
   "engines": { "node": ">=18" },
@@ -21,7 +21,8 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.10.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.7",
