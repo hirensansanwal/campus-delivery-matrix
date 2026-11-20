@@ -16,6 +16,15 @@ export const errorHandler = (err, req, res, next) => {
     statusCode = err.statusCode;
     message = err.message;
     details = err.details || undefined;
+  } else if (err.type === 'entity.parse.failed') {
+    statusCode = 400;
+    message = 'Invalid JSON in request body';
+  } else if (err.code === 'P2002') {
+    statusCode = 409;
+    message = 'A record with that value already exists';
+  } else if (err.code === 'P2025') {
+    statusCode = 404;
+    message = 'Record not found';
   } else if (env.nodeEnv !== 'production') {
     message = err.message || message;
   }
