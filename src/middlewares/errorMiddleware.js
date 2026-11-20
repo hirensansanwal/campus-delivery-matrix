@@ -19,6 +19,13 @@ export const errorHandler = (err, req, res, next) => {
   } else if (err.type === 'entity.parse.failed') {
     statusCode = 400;
     message = 'Invalid JSON in request body';
+  } else if (err.type === 'entity.too.large') {
+    statusCode = 413;
+    message = 'Request body is too large (limit 100kb)';
+  } else if (Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
+    // Other client errors raised by Express/body-parser (e.g. 415) keep their status.
+    statusCode = err.status;
+    message = err.expose && err.message ? err.message : 'Bad request';
   } else if (err.code === 'P2002') {
     statusCode = 409;
     message = 'A record with that value already exists';

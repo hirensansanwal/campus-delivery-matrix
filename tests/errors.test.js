@@ -36,3 +36,13 @@ test('successful responses use the success envelope', async () => {
   assert.equal(res.body.success, true);
   assert.ok('data' in res.body);
 });
+
+test('request body over the 100kb limit returns 413, not 500', async () => {
+  const res = await request(`${app.api}/auth/login`, {
+    method: 'POST',
+    body: { email: 'a@b.c', password: 'x'.repeat(200 * 1024) },
+  });
+  assert.equal(res.status, 413);
+  assert.equal(res.body.success, false);
+  assert.equal(res.body.message, 'Request body is too large (limit 100kb)');
+});

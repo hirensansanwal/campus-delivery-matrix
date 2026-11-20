@@ -98,7 +98,7 @@ cp .env.test.example .env.test   # point DATABASE_URL at a database whose name c
 npm test
 ```
 
-The first run migrates and seeds the test database automatically. The 19 tests cover login and roles, the error format, tag generation (including 12 guards logging at once) and pickup (including double pickup). They need Node 20.10 or newer.
+The first run migrates and seeds the test database automatically. The 20 tests cover login and roles, the error format (including the 413 for oversized bodies), tag generation (including 12 guards logging at once) and pickup (including double pickup). They need Node 20.10 or newer.
 
 ### Try it without any database
 
