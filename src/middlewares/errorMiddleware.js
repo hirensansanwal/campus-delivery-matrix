@@ -25,6 +25,10 @@ export const errorHandler = (err, req, res, next) => {
   } else if (err.code === 'P2025') {
     statusCode = 404;
     message = 'Record not found';
+  } else if (err.code === 'P2034') {
+    // Serializable transaction kept colliding (e.g. many guards logging at once).
+    statusCode = 503;
+    message = 'The gate desk is busy, please try again.';
   } else if (env.nodeEnv !== 'production') {
     message = err.message || message;
   }

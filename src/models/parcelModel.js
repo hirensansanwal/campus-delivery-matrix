@@ -1,13 +1,17 @@
 import prisma from '../config/prisma.js';
 import { generateNextTag, startOfToday } from '../utils/tagGenerator.js';
 
-const MAX_TAG_RETRIES = 3;
+const MAX_TAG_RETRIES = 6;
+const RETRY_BASE_MS = 20;
 const withStudent = { student: { select: { name: true, hostel: true, room: true } } };
 
 const parcelModel = {
   // Assign the next daily tag and create the parcel in ONE serializable
   // transaction. If two guards log at the same instant, Postgres aborts one
   // (Prisma code P2034) and we retry it, so tags never collide.
+  // Each retry waits a random, growing delay so colliding requests spread out
+  // instead of colliding again. If every attempt collides, P2034 reaches the
+  // error middleware and becomes a 503 ("busy, try again").
   async createWithTag({ student, carrier, trackingNumber, notes, loggedById }) {
     for (let attempt = 1; attempt <= MAX_TAG_RETRIES; attempt++) {
       try {
@@ -30,8 +34,9 @@ const parcelModel = {
           { isolationLevel: 'Serializable' }
         );
       } catch (err) {
-        if (err.code === 'P2034' && attempt < MAX_TAG_RETRIES) continue;
-        throw err;
+        if (err.code !== 'P2034' || attempt === MAX_TAG_RETRIES) throw err;
+        const delayMs = RETRY_BASE_MS * 2 ** (attempt - 1) * (1 + Math.random());
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
   },
