@@ -59,7 +59,7 @@ Then open `.env` and fill in the values:
 | :--- | :--- | :--- |
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `MONGODB_URI` | Yes | MongoDB connection string |
-| `JWT_SECRET` | Yes | Any long random string, used to sign login tokens |
+| `JWT_SECRET` | Yes | A random string of at least 32 characters, used to sign login tokens. The server refuses to start with a shorter one or the example value |
 | `PORT` | No | Defaults to `3000` |
 | `MONGODB_DB_NAME` | No | Defaults to `campus_delivery_matrix` |
 | `JWT_EXPIRES_IN` | No | Defaults to `8h` |
@@ -88,6 +88,17 @@ Open **http://localhost:3000** and sign in with one of the seeded accounts:
 | Admin | `admin@campus.edu` | `Admin@123` |
 | Guard | `guard1@campus.edu` | `Guard@123` |
 | Guard | `guard2@campus.edu` | `Guard@123` |
+
+### Run the tests
+
+The tests start the real API and call it over HTTP, against a **separate test database** so your real data is never touched.
+
+```bash
+cp .env.test.example .env.test   # point DATABASE_URL at a database whose name contains "test"
+npm test
+```
+
+The first run migrates and seeds the test database automatically. The 19 tests cover login and roles, the error format, tag generation (including 12 guards logging at once) and pickup (including double pickup). They need Node 20.10 or newer.
 
 ### Try it without any database
 
@@ -141,7 +152,9 @@ campus-delivery-matrix/
 │   ├── app.js           Express app (also serves public/)
 │   └── server.js        Entry point (connects Postgres + Mongo, starts server)
 ├── public/              Gate terminal UI: index.html, styles.css, app.js
+├── tests/               API tests (npm test): helpers, auth, errors, tags, pickup
 ├── .env.example
+├── .env.test.example
 └── package.json
 ```
 
