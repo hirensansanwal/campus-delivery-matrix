@@ -69,6 +69,13 @@
     lastParcel: null, busy: false, error: '',
     pickupResult: null, pickupLoading: false, pickupError: '',
   });
+  const freshAdmin = () => ({
+    tab: 'overview', guards: null, webhooks: null, chats: null,
+    showGuardForm: false, guardError: '', guardBusy: false,
+    webhookFilter: '', webhookCarrier: 'Amazon', payload: SAMPLE_PAYLOAD, webhookError: '', webhookBusy: false,
+    chatPhone: '', chatMessage: '', chatError: '', chatBusy: false,
+  });
+  const SAMPLE_PAYLOAD = JSON.stringify({ trackingNumber: 'AMZ1234567890', status: 'OUT_FOR_DELIVERY', location: 'Campus gate', eta: 'Today, 6 pm' }, null, 2);
 
   const state = {
     token: store.get('token'),
@@ -79,6 +86,7 @@
     desk: freshDesk(),
     shelf: { carrier: '', q: '', page: 1, searchOpen: false },
     students: { q: '', results: null, loading: false, error: '' },
+    admin: freshAdmin(),
     pickers: { log: newPicker(), pickup: newPicker() },
     lastRoute: null,
   };
@@ -128,7 +136,7 @@
     const { data } = await api('POST', '/auth/login', { email, password });
     state.token = data.token; state.user = data.user;
     store.set('token', data.token); store.set('user', data.user);
-    state.desk = freshDesk(); state.stats = null;
+    state.desk = freshDesk(); state.admin = freshAdmin(); state.stats = null;
     state.inventory = []; state.inventoryLoaded = false; state.lastRoute = null;
     state.loginError = ''; state.loginEmail = '';
     if (location.hash !== '#desk') location.hash = '#desk';
@@ -154,16 +162,41 @@
     try { const { data } = await api('GET', '/admin/stats'); state.stats = data; } catch { /* shown elsewhere */ }
     render();
   }
+  async function loadGuards() {
+    try { const { data } = await api('GET', '/admin/guards'); state.admin.guards = data; } catch (e) { toast(e.message, 'err'); }
+    render();
+  }
+  async function loadWebhooks() {
+    const c = state.admin.webhookFilter;
+    try {
+      const { data } = await api('GET', `/admin/webhooks?limit=50${c ? `&carrier=${encodeURIComponent(c)}` : ''}`);
+      state.admin.webhooks = data.webhooks;
+    } catch (e) { toast(e.message, 'err'); }
+    render();
+  }
+  async function loadChats() {
+    try { const { data } = await api('GET', '/admin/chat-logs?limit=50'); state.admin.chats = data.chatLogs; } catch (e) { toast(e.message, 'err'); }
+    render();
+  }
+  function loadAdminTab() {
+    const t = state.admin.tab;
+    if (t === 'overview') loadStats();
+    if (t === 'guards') loadGuards();
+    if (t === 'updates') loadWebhooks();
+    if (t === 'chat') loadChats();
+  }
   function enter(r) {
     loadInventory();
     if (r === 'desk') loadStats();
+    if (r === 'admin') loadAdminTab();
   }
 
   /* ---------- routing ---------- */
-  const ROUTES = { desk: 'Gate desk', shelf: 'Shelf', students: 'Students' };
+  const ROUTES = { desk: 'Gate desk', shelf: 'Shelf', students: 'Students', admin: 'Admin' };
   function currentRoute() {
     const r = location.hash.slice(1) || 'desk';
     if (!ROUTES[r]) return 'desk';
+    if (r === 'admin' && state.user?.role !== 'ADMIN') return 'desk';
     return r;
   }
 
@@ -194,7 +227,7 @@
     }
   }
 
-  const pageView = (r) => ({ desk: deskView, shelf: shelfView, students: studentsView }[r])();
+  const pageView = (r) => ({ desk: deskView, shelf: shelfView, students: studentsView, admin: adminView }[r])();
 
   const brandView = () => `
     <a class="brand" href="#desk">
@@ -207,10 +240,15 @@
     const admin = u.role === 'ADMIN';
     const n = state.inventory.length;
     const nav = [['desk', 'package', 'Gate desk'], ['shelf', 'layers', 'Shelf'], ['students', 'users', 'Students']];
+    if (admin) nav.push(['admin', 'chart', 'Admin']);
     return `
       <header class="topbar">
         ${brandView()}
         <div class="top-actions">
+          ${admin ? `<nav class="modes" aria-label="Workspace">
+            <a href="#desk" ${r !== 'admin' ? 'aria-current="page"' : ''}>Gate desk</a>
+            <a href="#admin" ${r === 'admin' ? 'aria-current="page"' : ''}>Admin</a>
+          </nav>` : ''}
           <a class="icon-btn bare" href="#shelf" aria-label="${plural(n, 'parcel')} on the shelf" title="On the shelf">
             ${icon('bell')}${n ? `<span class="badge">${n > 9 ? '9+' : n}</span>` : ''}
           </a>
@@ -505,6 +543,150 @@
       ${body}`;
   }
 
+  /* ----- Admin ----- */
+  function adminView() {
+    const a = state.admin;
+    const tabs = [['overview', 'Overview'], ['guards', 'Guards'], ['updates', 'Carrier updates'], ['chat', 'Driver chat']];
+    const sub = {
+      overview: 'How the gate is doing today',
+      guards: 'People who can sign in to the gate desk',
+      updates: 'Try how carrier status updates are stored',
+      chat: 'Try the directions chat for delivery drivers',
+    }[a.tab];
+    const body = { overview: adminOverview, guards: adminGuards, updates: adminUpdates, chat: adminChat }[a.tab]();
+    return `
+      <div class="page-head"><div><h1>Admin</h1><p>${sub}</p></div></div>
+      <div class="tabs" role="tablist">
+        ${tabs.map(([k, l]) => `<button role="tab" type="button" aria-selected="${a.tab === k}" data-action="admin-tab" data-tab="${k}">${l}</button>`).join('')}
+      </div>
+      ${body}`;
+  }
+
+  function adminOverview() {
+    const s = state.stats;
+    const stale = state.inventory.filter((p) => daysAgo(p.createdAt) >= 3).sort(byCreated);
+    return `
+      <div class="stat-row">
+        ${[[s?.receivedToday, 'Logged today'], [s?.pickedUpToday, 'Handed over today'], [s?.activeInventory, 'On the shelf']]
+          .map(([n, l]) => `<div class="stat"><b>${n ?? '–'}</b><span>${l}</span></div>`).join('')}
+      </div>
+      <p class="stat-note">${s ? `Updated at ${fmt.time(s.generatedAt)}.` : 'Loading…'} <button class="link" type="button" data-action="refresh-stats">Refresh</button></p>
+      <div class="split">
+        <div class="card-form">
+          <h3>Demo parcels</h3>
+          <p>Adds a parcel for each of the first five students, so you can try the desk. Each one gets the next tag for today.</p>
+          <button class="btn" type="button" data-action="seed">${icon('plus')}Add 5 demo parcels</button>
+        </div>
+        <div>
+          <div class="table-tools"><h2 class="section-title">Waiting 3 days or more</h2></div>
+          ${stale.length ? `<div class="stack">${stale.map((p) => `
+            <div class="pending-item">
+              ${tagView(p)}
+              <div class="meta"><b>${esc(p.student?.name)}</b><span>${esc(p.carrier)}, ${esc(place(p.student))}</span></div>
+              <span class="age-old">${waitingLabel(p.createdAt)}</span>
+            </div>`).join('')}</div>`
+            : '<p class="empty-note">Nothing has been waiting that long.</p>'}
+        </div>
+      </div>`;
+  }
+
+  function adminGuards() {
+    const a = state.admin;
+    const form = a.showGuardForm ? `
+      <form class="card-form inline" data-form="guard" novalidate>
+        <h3>Add a guard</h3>
+        <p>They sign in with this email and password. Share the password with them in person.</p>
+        ${a.guardError ? `<div class="form-error" role="alert">${esc(a.guardError)}</div>` : ''}
+        <div class="grid-2">
+          <div class="field"><label for="g-name">Name</label><input class="input" id="g-name" name="name" autocomplete="off" required></div>
+          <div class="field"><label for="g-email">Email</label><input class="input" id="g-email" name="email" type="email" autocomplete="off" required></div>
+        </div>
+        <div class="field"><label for="g-pass">Password</label><input class="input" id="g-pass" name="password" type="text" autocomplete="new-password" minlength="8" required><span class="hint">At least 8 characters.</span></div>
+        <div class="row">
+          <button class="btn btn-primary" type="submit" ${a.guardBusy ? 'disabled' : ''}>${a.guardBusy ? 'Creating…' : 'Create guard account'}</button>
+          <button class="btn btn-quiet" type="button" data-action="toggle-guard-form">Cancel</button>
+        </div>
+      </form>` : '';
+    const g = a.guards;
+    return `
+      <div class="table-tools">
+        <h2 class="section-title">Guards</h2>
+        ${a.showGuardForm ? '' : `<button class="btn btn-primary btn-sm" type="button" data-action="toggle-guard-form">${icon('plus')}Add guard</button>`}
+      </div>
+      ${form}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Added</th></tr></thead>
+          <tbody>
+            ${!g ? '<tr><td colspan="3" class="table-empty">Loading…</td></tr>'
+              : g.length ? g.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${fmt.short(u.createdAt)} ${new Date(u.createdAt).getFullYear()}</td></tr>`).join('')
+              : '<tr><td colspan="3" class="table-empty">No guards yet. Add one so the gate desk can be staffed.</td></tr>'}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function adminUpdates() {
+    const a = state.admin;
+    const list = a.webhooks;
+    return `
+      <div class="split">
+        <form class="card-form" data-form="webhook" novalidate>
+          <h3>Send a test update</h3>
+          <p>Stores the payload the way a carrier’s status callback would arrive.</p>
+          ${a.webhookError ? `<div class="form-error" role="alert">${esc(a.webhookError)}</div>` : ''}
+          <div class="field"><label for="wh-carrier">Carrier</label>
+            <select class="select" id="wh-carrier" data-bind="admin.webhookCarrier">${CARRIERS.map((c) => `<option ${c === a.webhookCarrier ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+          <div class="field"><label for="wh-payload">Payload (JSON)</label>
+            <textarea class="textarea" id="wh-payload" data-bind="admin.payload" spellcheck="false">${esc(a.payload)}</textarea></div>
+          <button class="btn btn-primary" type="submit" ${a.webhookBusy ? 'disabled' : ''}>${a.webhookBusy ? 'Saving…' : 'Save test update'}</button>
+        </form>
+        <div>
+          <div class="table-tools">
+            <h2 class="section-title">Received</h2>
+            <select class="select pill" id="wh-filter" data-bind="admin.webhookFilter" aria-label="Filter by carrier">
+              <option value="">All carriers</option>${CARRIERS.map((c) => `<option ${c === a.webhookFilter ? 'selected' : ''}>${c}</option>`).join('')}
+            </select>
+          </div>
+          ${!list ? '<p class="empty-note">Loading…</p>'
+            : list.length ? `<div class="stack">${list.map((w) => `
+              <article class="entry">
+                <header><b>${esc(w.carrier)}</b><span>${fmt.dateTime(w.receivedAt)} <span class="pill-status">${w.processed ? 'Processed' : 'Not processed'}</span></span></header>
+                <details><summary>Payload</summary><pre class="code">${esc(JSON.stringify(w.rawPayload, null, 2))}</pre></details>
+              </article>`).join('')}</div>`
+            : '<p class="empty-note">No updates yet. Send a test one to see it here.</p>'}
+        </div>
+      </div>`;
+  }
+
+  function adminChat() {
+    const a = state.admin;
+    const list = a.chats;
+    return `
+      <div class="split">
+        <form class="card-form" data-form="chat" novalidate>
+          <h3>Send a test message</h3>
+          <p>Writes as a delivery driver. The bot replies with directions to Gate 1.</p>
+          ${a.chatError ? `<div class="form-error" role="alert">${esc(a.chatError)}</div>` : ''}
+          <div class="field"><label for="ch-phone">Driver phone <span class="opt">(optional)</span></label>
+            <input class="input" id="ch-phone" data-bind="admin.chatPhone" inputmode="tel" value="${esc(a.chatPhone)}"></div>
+          <div class="field"><label for="ch-msg">Message</label>
+            <input class="input" id="ch-msg" data-bind="admin.chatMessage" placeholder="Where do I drop parcels?" value="${esc(a.chatMessage)}"></div>
+          <button class="btn btn-primary" type="submit" ${a.chatBusy ? 'disabled' : ''}>${a.chatBusy ? 'Sending…' : 'Send test message'}</button>
+        </form>
+        <div>
+          <div class="table-tools"><h2 class="section-title">Conversations</h2></div>
+          ${!list ? '<p class="empty-note">Loading…</p>'
+            : list.length ? `<div class="stack">${list.map((c) => `
+              <article class="entry">
+                <header><b>${esc(c.driverPhone || 'Unknown driver')}</b><span>${fmt.dateTime(c.createdAt)}</span></header>
+                ${(c.messages || []).map((m) => `<div class="bubble ${m.sender === 'bot' ? 'bot' : 'driver'}">${esc(m.text)}${m.time ? `<time>${fmt.time(m.time)}</time>` : ''}</div>`).join('')}
+              </article>`).join('')}</div>`
+            : '<p class="empty-note">No conversations yet. Send a test message to see one here.</p>'}
+        </div>
+      </div>`;
+  }
+
   /* ---------- student picker ---------- */
   const pickerTimers = {};
   function onPickerInput(key, el) {
@@ -665,6 +847,55 @@
     state.loginBusy = false; render();
   }
 
+  async function submitGuard(form) {
+    const a = state.admin;
+    const fd = new FormData(form);
+    const body = { name: fd.get('name'), email: fd.get('email'), password: fd.get('password') };
+    if (String(body.password || '').length < 8) { a.guardError = 'The password needs at least 8 characters.'; render(); return; }
+    a.guardBusy = true; a.guardError = '';
+    form.querySelector('button[type="submit"]').disabled = true;
+    try {
+      const { data } = await api('POST', '/admin/guards', body);
+      a.showGuardForm = false;
+      toast(`Guard account created for ${data.name}`);
+      a.guardBusy = false;
+      loadGuards();
+    } catch (e) {
+      a.guardBusy = false; a.guardError = e.message;
+      // keep what was typed: patch the error in instead of re-rendering the form
+      form.querySelector('.form-error')?.remove();
+      form.querySelector('h3 + p').insertAdjacentHTML('afterend', `<div class="form-error" role="alert">${esc(e.message)}</div>`);
+      form.querySelector('button[type="submit"]').disabled = false;
+    }
+  }
+
+  async function submitWebhook() {
+    const a = state.admin;
+    let payload;
+    try { payload = JSON.parse(a.payload); } catch (e) { a.webhookError = `The payload isn’t valid JSON: ${e.message}`; render(); return; }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { a.webhookError = 'The payload must be a JSON object, like { "status": "DELIVERED" }.'; render(); return; }
+    a.webhookBusy = true; a.webhookError = ''; render();
+    try {
+      await api('POST', '/admin/mock/webhook', { carrier: a.webhookCarrier, rawPayload: payload });
+      toast(`${a.webhookCarrier} update saved`);
+      await loadWebhooks();
+    } catch (e) { a.webhookError = e.message; }
+    a.webhookBusy = false; render();
+  }
+
+  async function submitChat() {
+    const a = state.admin;
+    if (!a.chatMessage.trim()) { a.chatError = 'Type a message to send.'; render(); return; }
+    a.chatBusy = true; a.chatError = ''; render();
+    try {
+      await api('POST', '/admin/mock/chat', { message: a.chatMessage.trim(), driverPhone: a.chatPhone.trim() || undefined });
+      a.chatMessage = '';
+      toast('Test message sent');
+      await loadChats();
+    } catch (e) { a.chatError = e.message; }
+    a.chatBusy = false; render();
+  }
+
   function setPath(path, value) {
     const [group, key] = path.split('.');
     state[group][key] = value;
@@ -699,6 +930,18 @@
         break;
       }
       case 'refresh-shelf': loadInventory(); break;
+      case 'admin-tab': state.admin.tab = el.dataset.tab; render(); loadAdminTab(); break;
+      case 'refresh-stats': loadStats(); break;
+      case 'toggle-guard-form':
+        state.admin.showGuardForm = !state.admin.showGuardForm; state.admin.guardError = ''; render();
+        if (state.admin.showGuardForm) document.getElementById('g-name')?.focus();
+        break;
+      case 'seed':
+        el.disabled = true;
+        try { const { message } = await api('POST', '/admin/mock/seed'); toast(message || 'Demo parcels added'); }
+        catch (err) { toast(err.message, 'err'); }
+        loadInventory(); loadStats();
+        break;
       default: break;
     }
   });
@@ -732,6 +975,7 @@
     const t = e.target;
     if (t.tagName !== 'SELECT' || !t.dataset.bind) return;
     setPath(t.dataset.bind, t.value);
+    if (t.dataset.bind === 'admin.webhookFilter') { loadWebhooks(); return; }
     if (t.dataset.bind.startsWith('shelf.')) state.shelf.page = 1;
     render();
   });
@@ -758,7 +1002,7 @@
     const f = e.target.closest('form[data-form]');
     if (!f) return;
     e.preventDefault();
-    ({ login: submitLogin, log: submitLog })[f.dataset.form]?.(f);
+    ({ login: submitLogin, log: submitLog, guard: submitGuard, webhook: submitWebhook, chat: submitChat })[f.dataset.form]?.(f);
   });
 
   window.addEventListener('hashchange', render);

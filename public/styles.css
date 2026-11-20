@@ -107,6 +107,19 @@ svg.i {
 .brand-name span { font-size: 13px; color: var(--muted); }
 
 .top-actions { display: flex; align-items: center; gap: 16px; }
+.modes { display: flex; padding: 4px; background: var(--sunken); border-radius: 999px; }
+.modes a {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-radius: 999px;
+  text-decoration: none; color: var(--muted); font-weight: 500; font-size: 14px;
+}
+.modes a::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .55; }
+.modes a[aria-current="page"] {
+  background: var(--surface); color: var(--crimson);
+  box-shadow: 0 0 0 1px var(--line), 0 2px 6px rgba(39, 33, 31, .06);
+}
+.modes a[aria-current="page"]::before { opacity: 1; }
+
 .icon-btn {
   position: relative;
   width: 44px; height: 44px; border-radius: 50%;
@@ -129,6 +142,11 @@ svg.i {
   display: grid; place-items: center; flex: none;
   background: var(--surface); color: var(--ink-2); font-weight: 500;
   box-shadow: 0 0 0 1px var(--line), 0 4px 12px rgba(39, 33, 31, .06);
+}
+
+.link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px;
 }
 
 /* ---------- Shell ---------- */
@@ -370,6 +388,40 @@ td.num { font-variant-numeric: tabular-nums; }
 .pager button:hover:not([disabled]) { background: var(--sunken); }
 .pager button[disabled] { opacity: .4; cursor: default; }
 .pager svg.i { width: 18px; height: 18px; }
+
+/* ---------- Admin ---------- */
+.stat-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.stat { padding: 22px 24px; border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface); }
+.stat b { display: block; font-size: 44px; font-weight: 600; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); }
+.stat-note { margin: 14px 0 40px; color: var(--muted); font-size: 14px; }
+
+.split { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 48px; align-items: start; }
+.card-form { padding: 26px; border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface); }
+.card-form h3 { margin: 0 0 6px; font-size: 19px; font-weight: 600; }
+.card-form > p { margin: 0 0 22px; color: var(--muted); font-size: 14.5px; }
+.card-form .field:last-of-type { margin-bottom: 26px; }
+.card-form.inline { max-width: 760px; margin-bottom: 28px; }
+
+.stack { display: grid; gap: 14px; }
+.entry { padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface); }
+.entry header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.entry header b { font-weight: 600; }
+.entry header span { color: var(--muted); font-size: 13.5px; text-align: right; }
+.pill-status {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  background: var(--sunken); color: var(--ink-2); font-size: 12.5px; font-weight: 500;
+}
+details summary { cursor: pointer; color: var(--ink-2); font-weight: 500; font-size: 14px; }
+pre.code {
+  margin: 10px 0 0; padding: 14px; overflow-x: auto;
+  border-radius: var(--r-s); background: var(--sunken);
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.55;
+}
+.bubble { max-width: 80%; margin-bottom: 8px; padding: 10px 14px; border-radius: 16px; font-size: 14.5px; }
+.bubble.driver { background: var(--sunken); border-bottom-left-radius: 6px; }
+.bubble.bot { margin-left: auto; background: var(--crimson-soft); border-bottom-right-radius: 6px; }
+.bubble time { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
 
 /* ---------- Sign in ---------- */
 .login { min-height: 100vh; display: flex; flex-direction: column; }
