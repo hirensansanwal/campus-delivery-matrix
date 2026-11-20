@@ -5,6 +5,8 @@
  *   - served by the API itself     -> same origin, /api/v1
  *   - opened from disk (file://)   -> http://localhost:3000/api/v1
  *   - override with ?api=http://host:port
+ * Demo mode (?demo, or "Explore with demo data" on sign-in) runs an
+ * in-memory copy of the API so the UI works without Postgres/Mongo.
  */
 (() => {
   'use strict';
@@ -14,6 +16,11 @@
     (params.get('api') || (location.protocol === 'file:' ? 'http://localhost:3000' : '')).replace(/\/$/, '') + '/api/v1';
   const CARRIERS = ['Amazon', 'Flipkart', 'Delhivery', 'Bluedart', 'Myntra'];
   const PAGE_SIZE = 10;
+  const DEMO_USERS = [
+    { email: 'admin@campus.edu', password: 'Admin@123', name: 'Campus Admin', role: 'Admin' },
+    { email: 'guard1@campus.edu', password: 'Guard@123', name: 'Guard One', role: 'Guard' },
+    { email: 'guard2@campus.edu', password: 'Guard@123', name: 'Guard Two', role: 'Guard' },
+  ];
 
   /* ---------- small helpers ---------- */
   const store = {
@@ -64,6 +71,8 @@
   const icon = (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
   /* ---------- state ---------- */
+  if (params.has('demo')) store.set('demo', true);
+
   const freshDesk = () => ({
     tab: 'log', logStudent: null, carrier: 'Amazon', otherCarrier: '', tracking: '', notes: '',
     lastParcel: null, busy: false, error: '',
@@ -80,6 +89,7 @@
   const state = {
     token: store.get('token'),
     user: store.get('user'),
+    demo: store.get('demo') === true,
     loginError: '', loginEmail: '', loginBusy: false,
     inventory: [], inventoryLoaded: false,
     stats: null,
@@ -95,6 +105,7 @@
   /* ---------- API client ---------- */
   async function api(method, path, body) {
     try {
+      if (state.demo) return await mock.handle(method, path, body);
       let res;
       try {
         res = await fetch(API_ROOT + path, {
@@ -106,7 +117,7 @@
           body: body ? JSON.stringify(body) : undefined,
         });
       } catch {
-        throw Object.assign(new Error(`Can’t reach the server at ${API_ROOT}. Start it with “npm run dev”.`), { status: 0 });
+        throw Object.assign(new Error(`Can’t reach the server at ${API_ROOT}. Start it with “npm run dev”, or explore the demo instead.`), { status: 0 });
       }
       let json;
       try { json = await res.json(); } catch { json = { success: false, message: `The server answered with status ${res.status}.` }; }
@@ -120,6 +131,212 @@
       throw e;
     }
   }
+
+  /* ---------- in-memory demo API (mirrors the Express routes) ---------- */
+  const mock = (() => {
+    const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
+    const users = [
+      { id: 'demo-admin', name: 'Campus Admin', email: 'admin@campus.edu', password: 'Admin@123', role: 'ADMIN', createdAt: new Date(Date.now() - 40 * 864e5) },
+      { id: 'demo-guard1', name: 'Guard One', email: 'guard1@campus.edu', password: 'Guard@123', role: 'GUARD', createdAt: new Date(Date.now() - 38 * 864e5) },
+      { id: 'demo-guard2', name: 'Guard Two', email: 'guard2@campus.edu', password: 'Guard@123', role: 'GUARD', createdAt: new Date(Date.now() - 21 * 864e5) },
+    ];
+    const students = [
+      ['RU2025CS001', 'Aarav Sharma', 'Aravali Hostel', 'A-101'],
+      ['RU2025CS002', 'Ananya Verma', 'Aravali Hostel', 'A-102'],
+      ['RU2025CS003', 'Rohan Gupta', 'Aravali Hostel', 'A-203'],
+      ['RU2025CS004', 'Priya Singh', 'Shivalik Hostel', 'S-105'],
+      ['RU2025CS005', 'Kabir Malhotra', 'Shivalik Hostel', 'S-210'],
+      ['RU2025CS006', 'Isha Kapoor', 'Shivalik Hostel', 'S-211'],
+      ['RU2025CS007', 'Vihaan Mehta', 'Aravali Hostel', 'A-305'],
+      ['RU2025CS008', 'Diya Reddy', 'Shivalik Hostel', 'S-312'],
+      ['RU2025CS009', 'Arjun Nair', 'Aravali Hostel', 'A-110'],
+      ['RU2025CS010', 'Meera Joshi', 'Shivalik Hostel', 'S-118'],
+    ].map(([enrollmentNo, name, hostel, room]) => ({
+      id: uid(), enrollmentNo, name, hostel, room, phone: null, email: `${enrollmentNo.toLowerCase()}@campus.edu`,
+    }));
+    const parcels = [];
+    const webhooks = [];
+    const chats = [];
+
+    const tagFor = (date) => `P-${101 + parcels.filter((p) => dayKey(p.createdAt) === dayKey(date)).length}`;
+    const add = (enr, carrier, createdAt, pickedUp, loggedById = 'demo-guard1') => {
+      const s = students.find((x) => x.enrollmentNo === enr);
+      const p = {
+        id: uid(), lookupNumber: tagFor(createdAt), carrier, trackingNumber: null, notes: null,
+        status: pickedUp ? 'PICKED_UP' : 'RECEIVED', studentId: s.id, studentEnrollmentNo: s.enrollmentNo,
+        loggedById, pickedUpAt: pickedUp ? new Date(createdAt.getTime() + 3 * 36e5) : null,
+        createdAt, updatedAt: createdAt,
+      };
+      parcels.push(p);
+      return p;
+    };
+    const daysBack = (n, h, m) => { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(h, m, 0, 0); return d; };
+    const minsAgo = (m) => new Date(Date.now() - m * 6e4);
+
+    // Seeded so a student has two "P-101" parcels from different days: dates matter.
+    add('RU2025CS004', 'Flipkart', daysBack(5, 11, 20));
+    add('RU2025CS001', 'Amazon', daysBack(2, 10, 5));
+    add('RU2025CS007', 'Delhivery', daysBack(2, 12, 40), true);
+    add('RU2025CS002', 'Myntra', daysBack(2, 15, 10));
+    add('RU2025CS009', 'Bluedart', daysBack(1, 9, 30), true);
+    add('RU2025CS005', 'Amazon', daysBack(1, 13, 15));
+    add('RU2025CS006', 'Flipkart', daysBack(1, 16, 45));
+    add('RU2025CS001', 'Amazon', minsAgo(190));
+    add('RU2025CS003', 'Flipkart', minsAgo(150), true);
+    add('RU2025CS008', 'Delhivery', minsAgo(95));
+    add('RU2025CS010', 'Amazon', minsAgo(40));
+
+    webhooks.push({ _id: uid(), carrier: 'Delhivery', rawPayload: { awb: 'DL55120934', status: 'DELIVERED', receivedBy: 'Gate 1' }, receivedAt: minsAgo(96), processed: false });
+    chats.push({
+      _id: uid(), sessionId: 'chat_session_demo', driverPhone: '+91 98XXXXXX21', createdAt: minsAgo(70),
+      messages: [
+        { sender: 'driver', text: 'Which gate for parcel drop?', time: minsAgo(70) },
+        { sender: 'bot', text: 'Please proceed to Gate 1 Main Security Office.', time: minsAgo(70) },
+      ],
+    });
+
+    const err = (status, message) => Object.assign(new Error(message), { status });
+    const ok = (data, message) => ({ success: true, ...(message ? { message } : {}), data });
+    const pubUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, createdAt: u.createdAt });
+    const view = (p) => {
+      const s = students.find((x) => x.id === p.studentId);
+      return { ...p, student: s ? { name: s.name, hostel: s.hostel, room: s.room } : undefined };
+    };
+    const limitOf = (v) => { const n = parseInt(v, 10); return Number.isNaN(n) || n < 1 ? 50 : Math.min(n, 200); };
+
+    async function handle(method, fullPath, body = {}) {
+      await new Promise((r) => setTimeout(r, 160));
+      body = body || {};
+      const [path, query = ''] = fullPath.split('?');
+      const q = new URLSearchParams(query);
+
+      if (method === 'POST' && path === '/auth/login') {
+        const email = String(body.email || '').trim().toLowerCase();
+        const password = String(body.password || '');
+        if (!email || !password) throw err(400, 'email and password are required');
+        const u = users.find((x) => x.email === email && x.password === password);
+        if (!u) throw err(401, 'Invalid email or password');
+        return ok({ token: `demo.${u.id}`, user: pubUser(u) }, 'Login successful');
+      }
+
+      const me = users.find((u) => `demo.${u.id}` === state.token);
+      if (!me) throw err(401, 'Missing or malformed Authorization header');
+      const adminOnly = () => { if (me.role !== 'ADMIN') throw err(403, 'You do not have permission to perform this action'); };
+
+      if (method === 'GET' && path === '/auth/me') return ok(pubUser(me));
+
+      if (method === 'POST' && path === '/parcels') {
+        const enr = String(body.studentEnrollmentNo || '').trim().toUpperCase();
+        const carrier = String(body.carrier || '').trim();
+        if (!enr || !carrier) throw err(400, 'studentEnrollmentNo and carrier are required');
+        const s = students.find((x) => x.enrollmentNo === enr);
+        if (!s) throw err(404, `No student found with enrollment number ${enr}`);
+        const p = add(enr, carrier, new Date(), false, me.id);
+        p.trackingNumber = body.trackingNumber ? String(body.trackingNumber).trim() : null;
+        p.notes = body.notes ? String(body.notes).trim() : null;
+        return ok(view(p), `Parcel logged. Write "${p.lookupNumber}" on the box.`);
+      }
+      if (method === 'GET' && path === '/parcels/search') {
+        const enr = String(q.get('enrollmentNo') || '').trim().toUpperCase();
+        if (!enr) throw err(400, 'Query parameter "enrollmentNo" is required');
+        const s = students.find((x) => x.enrollmentNo === enr);
+        if (!s) throw err(404, `No student found with enrollment number ${enr}`);
+        const list = parcels.filter((p) => p.studentEnrollmentNo === enr && p.status === 'RECEIVED').sort(byCreated).map(view);
+        return ok({ student: { ...s }, pendingCount: list.length, lookupNumbers: list.map((p) => p.lookupNumber), parcels: list });
+      }
+      if (method === 'GET' && path === '/parcels/inventory') {
+        const list = parcels.filter((p) => p.status === 'RECEIVED').sort(byCreated).map(view);
+        return ok({ count: list.length, parcels: list });
+      }
+      const pickup = path.match(/^\/parcels\/([^/]+)\/pickup$/);
+      if (method === 'PATCH' && pickup) {
+        const p = parcels.find((x) => x.id === decodeURIComponent(pickup[1]));
+        if (!p) throw err(404, 'Parcel not found');
+        if (p.status !== 'RECEIVED') throw err(409, `Parcel ${p.lookupNumber} has already been picked up`);
+        p.status = 'PICKED_UP'; p.pickedUpAt = new Date(); p.updatedAt = new Date();
+        return ok(view(p), `Parcel ${p.lookupNumber} marked as picked up`);
+      }
+      if (method === 'GET' && path === '/students/search') {
+        const term = String(q.get('q') || '').trim();
+        if (term.length < 2) throw err(400, 'Query "q" must be at least 2 characters');
+        const t = term.toLowerCase();
+        const list = students
+          .filter((s) => s.enrollmentNo.toLowerCase().includes(t) || s.name.toLowerCase().includes(t))
+          .sort((a, b) => a.enrollmentNo.localeCompare(b.enrollmentNo))
+          .slice(0, 10);
+        return ok(list.map((s) => ({ ...s })));
+      }
+
+      if (path.startsWith('/admin/')) adminOnly();
+      if (method === 'GET' && path === '/admin/stats') {
+        const since = new Date(); since.setHours(0, 0, 0, 0);
+        return ok({
+          receivedToday: parcels.filter((p) => new Date(p.createdAt) >= since).length,
+          pickedUpToday: parcels.filter((p) => p.status === 'PICKED_UP' && new Date(p.pickedUpAt) >= since).length,
+          activeInventory: parcels.filter((p) => p.status === 'RECEIVED').length,
+          generatedAt: new Date(),
+        });
+      }
+      if (method === 'GET' && path === '/admin/guards') {
+        return ok(users.filter((u) => u.role === 'GUARD').sort((a, b) => b.createdAt - a.createdAt).map(pubUser));
+      }
+      if (method === 'POST' && path === '/admin/guards') {
+        const name = String(body.name || '').trim();
+        const email = String(body.email || '').trim().toLowerCase();
+        const password = String(body.password || '');
+        if (!name || !email || !password) throw err(400, 'name, email and password are required');
+        if (password.length < 8) throw err(400, 'password must be at least 8 characters');
+        if (users.some((u) => u.email === email)) throw err(409, 'A user with that email already exists');
+        const u = { id: uid(), name, email, password, role: 'GUARD', createdAt: new Date() };
+        users.push(u);
+        return ok(pubUser(u), 'Guard account created');
+      }
+      if (method === 'POST' && path === '/admin/mock/webhook') {
+        const carrier = String(body.carrier || '').trim();
+        const raw = body.rawPayload;
+        if (!carrier) throw err(400, 'carrier is required');
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw err(400, 'rawPayload must be a JSON object');
+        const doc = { _id: uid(), carrier, rawPayload: raw, receivedAt: new Date(), processed: false };
+        webhooks.push(doc);
+        return ok(doc, 'Webhook stored in MongoDB');
+      }
+      if (method === 'POST' && path === '/admin/mock/chat') {
+        let messages = body.messages;
+        if (!Array.isArray(messages) || !messages.length) {
+          const text = String(body.message || '').trim();
+          if (!text) throw err(400, 'Provide either "message" or a non-empty "messages" array');
+          messages = [
+            { sender: 'driver', text, time: new Date() },
+            { sender: 'bot', text: 'Please proceed to Gate 1 Main Security Office.', time: new Date() },
+          ];
+        }
+        const doc = { _id: uid(), sessionId: body.sessionId || `chat_session_${Date.now()}`, driverPhone: body.driverPhone || null, messages, createdAt: new Date() };
+        chats.push(doc);
+        return ok(doc, 'Chat log stored in MongoDB');
+      }
+      if (method === 'POST' && path === '/admin/mock/seed') {
+        const first = [...students].sort((a, b) => a.enrollmentNo.localeCompare(b.enrollmentNo)).slice(0, 5);
+        const created = first.map((s, i) => {
+          const p = add(s.enrollmentNo, CARRIERS[i], new Date(), false, me.id);
+          p.trackingNumber = `DEMO${Date.now()}${i}`; p.notes = 'Demo seed';
+          return view(p);
+        });
+        return ok(created, '5 demo parcels created');
+      }
+      if (method === 'GET' && path === '/admin/webhooks') {
+        const c = q.get('carrier');
+        const list = webhooks.filter((w) => !c || w.carrier === c).sort((a, b) => b.receivedAt - a.receivedAt).slice(0, limitOf(q.get('limit')));
+        return ok({ count: list.length, webhooks: list });
+      }
+      if (method === 'GET' && path === '/admin/chat-logs') {
+        const sid = q.get('sessionId');
+        const list = chats.filter((c) => !sid || c.sessionId === sid).sort((a, b) => b.createdAt - a.createdAt).slice(0, limitOf(q.get('limit')));
+        return ok({ count: list.length, chatLogs: list });
+      }
+      throw err(404, `Route not found: ${method} /api/v1${path}`);
+    }
+    return { handle };
+  })();
 
   /* ---------- toast ---------- */
   let toastTimer;
@@ -235,6 +452,10 @@
       <span class="brand-name"><b>Parcel Collector</b><span>Campus Delivery Matrix</span></span>
     </a>`;
 
+  const demoBar = () => `
+    <div class="demo-bar">Demo mode. Changes stay in this tab and reset when you reload.
+      <button class="link" data-action="demo-off">Use the real server</button></div>`;
+
   function shellView(r, body) {
     const u = state.user;
     const admin = u.role === 'ADMIN';
@@ -255,6 +476,7 @@
           <div class="avatar" title="${esc(u.name)}, ${admin ? 'Admin' : 'Guard'}">${esc(initials(u.name))}</div>
         </div>
       </header>
+      ${state.demo ? demoBar() : ''}
       <div class="shell">
         <nav class="rail" aria-label="Main">
           ${nav.map(([k, ic, label]) => `<a href="#${k}" aria-label="${label}" title="${label}" ${r === k ? 'aria-current="page"' : ''}>${icon(ic)}</a>`).join('')}
@@ -269,6 +491,7 @@
     return `
       <div class="login">
         <header class="topbar">${brandView()}</header>
+        ${state.demo ? demoBar() : ''}
         <div class="login-main">
           <section class="login-card">
             <h1>Sign in to the gate desk</h1>
@@ -285,6 +508,17 @@
               </div>
               <button class="btn btn-primary btn-lg btn-block" type="submit" ${busy ? 'disabled' : ''}>${busy ? 'Signing in…' : 'Sign in'}</button>
             </form>
+            <div class="or">or</div>
+            ${state.demo
+              ? `<span class="label">Sign in to the demo as</span>
+                 <div class="quick">${DEMO_USERS.map((u) => `
+                   <button class="student" type="button" data-action="demo-login" data-email="${esc(u.email)}" data-password="${esc(u.password)}">
+                     <span class="av">${esc(initials(u.name))}</span>
+                     <span class="who"><b>${esc(u.name)}</b><span>${u.role}, ${esc(u.email)}</span></span>
+                     ${icon('chevron-right')}
+                   </button>`).join('')}</div>`
+              : `<button class="btn btn-lg btn-block" type="button" data-action="demo-on">Explore with demo data</button>
+                 <p class="fine">Runs in your browser. Useful when the server isn’t running.</p>`}
           </section>
           <aside class="login-aside" aria-hidden="true">
             ${stampView('P-101', new Date())}
@@ -908,6 +1142,11 @@
     const d = state.desk;
     switch (el.dataset.action) {
       case 'sign-out': signOut(); break;
+      case 'demo-on': state.demo = true; store.set('demo', true); state.loginError = ''; render(); break;
+      case 'demo-off': state.demo = false; store.set('demo', null); state.loginError = ''; signOut(); break;
+      case 'demo-login':
+        try { await signIn(el.dataset.email, el.dataset.password); } catch (err) { state.loginError = err.message; render(); }
+        break;
       case 'desk-tab': d.tab = el.dataset.tab; render(); break;
       case 'carrier':
         d.carrier = el.dataset.carrier; render();

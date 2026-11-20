@@ -144,6 +144,11 @@ svg.i {
   box-shadow: 0 0 0 1px var(--line), 0 4px 12px rgba(39, 33, 31, .06);
 }
 
+.demo-bar {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 12px;
+  padding: 8px 16px; background: var(--amber-soft); color: var(--amber);
+  font-size: 13.5px; font-weight: 500; text-align: center;
+}
 .link {
   background: none; border: 0; padding: 0; cursor: pointer;
   color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px;
@@ -433,6 +438,10 @@ pre.code {
 }
 .login-card h1 { margin: 0; font-size: 30px; font-weight: 600; color: var(--crimson); letter-spacing: -.015em; }
 .login-card > p { margin: 8px 0 32px; color: var(--muted); font-size: 16px; }
+.or { display: flex; align-items: center; gap: 12px; margin: 26px 0; color: var(--muted); font-size: 13px; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.quick { display: grid; gap: 10px; margin-top: 10px; }
+.fine { margin: 10px 0 0; text-align: center; color: var(--muted); font-size: 13px; }
 .login-aside {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 34px;
   min-height: 460px; padding: 48px; border-radius: 28px;
