@@ -56,12 +56,15 @@ const parcelModel = {
     });
   },
 
-  markPickedUp(id) {
-    return prisma.parcel.update({
-      where: { id },
+  // Guarded update: only flips RECEIVED -> PICKED_UP. Returns null if the
+  // parcel was already collected (prevents double handover).
+  async markPickedUp(id) {
+    const result = await prisma.parcel.updateMany({
+      where: { id, status: 'RECEIVED' },
       data: { status: 'PICKED_UP', pickedUpAt: new Date() },
-      include: withStudent,
     });
+    if (result.count === 0) return null;
+    return prisma.parcel.findUnique({ where: { id }, include: withStudent });
   },
 
   async getTodayStats() {

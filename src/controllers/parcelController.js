@@ -61,6 +61,7 @@ export const markPickedUp = asyncHandler(async (req, res) => {
   if (!existing) throw ApiError.notFound('Parcel not found');
 
   const updated = await parcelModel.markPickedUp(id);
+  if (!updated) throw ApiError.conflict(`Parcel ${existing.lookupNumber} has already been picked up`);
 
   sendSuccess(res, presentParcel(updated), { message: `Parcel ${updated.lookupNumber} marked as picked up` });
 });
