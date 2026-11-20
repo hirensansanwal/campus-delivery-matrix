@@ -4,7 +4,9 @@
  * API base:
  *   - served by the API itself     -> same origin, /api/v1
  *   - opened from disk (file://)   -> http://localhost:3000/api/v1
- *   - override with ?api=http://host:port
+ *   - override with ?api=http://host:port (only honoured when the page is
+ *     opened from disk or localhost, so a crafted link can't send logins
+ *     to another server)
  * Demo mode (?demo, or "Explore with demo data" on sign-in) runs an
  * in-memory copy of the API so the UI works without Postgres/Mongo.
  */
@@ -12,8 +14,11 @@
   'use strict';
 
   const params = new URLSearchParams(location.search);
+  const isLocalPage =
+    location.protocol === 'file:' || ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+  const apiOverride = isLocalPage ? params.get('api') : null;
   const API_ROOT =
-    (params.get('api') || (location.protocol === 'file:' ? 'http://localhost:3000' : '')).replace(/\/$/, '') + '/api/v1';
+    (apiOverride || (location.protocol === 'file:' ? 'http://localhost:3000' : '')).replace(/\/$/, '') + '/api/v1';
   const CARRIERS = ['Amazon', 'Flipkart', 'Delhivery', 'Bluedart', 'Myntra'];
   const PAGE_SIZE = 10;
   const DEMO_USERS = [
