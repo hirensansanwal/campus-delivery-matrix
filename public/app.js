@@ -77,6 +77,7 @@
     tab: 'log', logStudent: null, carrier: 'Amazon', otherCarrier: '', tracking: '', notes: '',
     lastParcel: null, busy: false, error: '',
     pickupResult: null, pickupLoading: false, pickupError: '',
+    day: dayKey(new Date()),
   });
   const freshAdmin = () => ({
     tab: 'overview', guards: null, webhooks: null, chats: null,
@@ -569,7 +570,7 @@
           </div>
           ${d.tab === 'log' ? logView() : handoverView()}
         </section>
-        <aside class="desk-aside">${todayView()}</aside>
+        <aside class="desk-aside">${todayView()}${weekView()}</aside>
       </div>`;
   }
 
@@ -673,6 +674,45 @@
       <div class="aside-block">
         <h2>Today</h2>
         <div class="today">${items.map(([n, l]) => `<div><b>${n}</b><span>${l}</span></div>`).join('')}</div>
+      </div>`;
+  }
+
+  function weekView() {
+    const inv = state.inventory;
+    const days = [];
+    for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(d); }
+    const keys = new Set(days.map(dayKey));
+    const counts = {};
+    inv.forEach((p) => { const k = keys.has(dayKey(p.createdAt)) ? dayKey(p.createdAt) : 'older'; counts[k] = (counts[k] || 0) + 1; });
+    const sel = state.desk.day;
+    const list = inv.filter((p) => (sel === 'older' ? !keys.has(dayKey(p.createdAt)) : dayKey(p.createdAt) === sel)).sort(byCreated);
+
+    const older = counts.older
+      ? `<button class="day" type="button" aria-pressed="${sel === 'older'}" data-action="pick-day" data-day="older" aria-label="Older than a week: ${counts.older} waiting">
+           <span>Older</span><b>${icon('clock')}</b><i>${counts.older}</i></button>`
+      : '';
+    const chips = days.map((d) => {
+      const k = dayKey(d);
+      const n = counts[k] || 0;
+      return `<button class="day ${n ? '' : 'empty'}" type="button" aria-pressed="${k === sel}" data-action="pick-day" data-day="${k}" aria-label="${fmt.long(d)}: ${n} waiting">
+        <span>${fmt.weekday(d)}</span><b>${d.getDate()}</b>${n ? `<i>${n}</i>` : ''}</button>`;
+    }).join('');
+
+    let body;
+    if (!state.inventoryLoaded) body = '<p class="empty-note">Loading the shelf…</p>';
+    else if (!list.length) body = `<p class="empty-note">Nothing logged ${sel === dayKey(new Date()) ? 'today' : 'that day'} is still waiting.</p>`;
+    else body = `<ol class="timeline">${list.map((p) => `
+      <li><button class="tl-btn" type="button" data-action="lookup" data-enr="${esc(p.studentEnrollmentNo)}" title="Hand over to ${esc(p.student?.name)}">
+        <span class="tl-time">${sel === 'older' ? fmt.short(p.createdAt) : fmt.time(p.createdAt)}</span>
+        ${tagView(p)}
+        <span class="tl-who"><b>${esc(p.student?.name)}</b><span>${esc(p.carrier)}${p.student?.room ? `, ${esc(p.student.room)}` : ''}</span></span>
+      </button></li>`).join('')}</ol>`;
+
+    return `
+      <div class="aside-block">
+        <h2>Waiting on the shelf <a href="#shelf">See all</a></h2>
+        <div class="days" role="group" aria-label="Day logged">${older}${chips}</div>
+        ${body}
       </div>`;
   }
 
@@ -1065,7 +1105,7 @@
         trackingNumber: d.tracking.trim() || undefined,
         notes: d.notes.trim() || undefined,
       });
-      d.lastParcel = data; d.tracking = ''; d.notes = '';
+      d.lastParcel = data; d.tracking = ''; d.notes = ''; d.day = dayKey(data.createdAt);
       state.inventory = [...state.inventory, data];
     } catch (e) { d.error = e.message; }
     d.busy = false;
@@ -1159,6 +1199,7 @@
       case 'lookup': lookupParcels(el.dataset.enr); break;
       case 'handover': el.disabled = true; handoverOne(el.dataset.id); break;
       case 'handover-all': el.disabled = true; handoverAll(); break;
+      case 'pick-day': d.day = el.dataset.day; render(); break;
       case 'page': state.shelf.page = Math.max(1, parseInt(el.dataset.page, 10) || 1); render(); break;
       case 'toggle-shelf-search': {
         const s = state.shelf;
@@ -1245,6 +1286,12 @@
   });
 
   window.addEventListener('hashchange', render);
+
+  // Keep the shelf fresh when several guards share the desk. Skips while someone is typing.
+  setInterval(() => {
+    const typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (state.token && document.visibilityState === 'visible' && !typing) loadInventory();
+  }, 60000);
 
   render();
 })();
