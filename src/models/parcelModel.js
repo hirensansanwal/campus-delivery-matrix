@@ -1,24 +1,39 @@
 import prisma from '../config/prisma.js';
 import { generateNextTag, startOfToday } from '../utils/tagGenerator.js';
 
+const MAX_TAG_RETRIES = 3;
 const withStudent = { student: { select: { name: true, hostel: true, room: true } } };
 
 const parcelModel = {
-  // Assign the next daily tag and create the parcel.
+  // Assign the next daily tag and create the parcel in ONE serializable
+  // transaction. If two guards log at the same instant, Postgres aborts one
+  // (Prisma code P2034) and we retry it, so tags never collide.
   async createWithTag({ student, carrier, trackingNumber, notes, loggedById }) {
-    const lookupNumber = await generateNextTag(prisma);
-    return prisma.parcel.create({
-      data: {
-        lookupNumber,
-        carrier,
-        trackingNumber: trackingNumber || null,
-        notes: notes || null,
-        studentId: student.id,
-        studentEnrollmentNo: student.enrollmentNo,
-        loggedById,
-      },
-      include: withStudent,
-    });
+    for (let attempt = 1; attempt <= MAX_TAG_RETRIES; attempt++) {
+      try {
+        return await prisma.$transaction(
+          async (tx) => {
+            const lookupNumber = await generateNextTag(tx);
+            return tx.parcel.create({
+              data: {
+                lookupNumber,
+                carrier,
+                trackingNumber: trackingNumber || null,
+                notes: notes || null,
+                studentId: student.id,
+                studentEnrollmentNo: student.enrollmentNo,
+                loggedById,
+              },
+              include: withStudent,
+            });
+          },
+          { isolationLevel: 'Serializable' }
+        );
+      } catch (err) {
+        if (err.code === 'P2034' && attempt < MAX_TAG_RETRIES) continue;
+        throw err;
+      }
+    }
   },
 
   findById(id) {
